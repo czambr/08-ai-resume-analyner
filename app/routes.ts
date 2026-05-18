@@ -1,3 +1,11 @@
-import { type RouteConfig, index } from "@react-router/dev/routes";
+import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
-export default [index("routes/home.tsx")] satisfies RouteConfig;
+export const meta = () => ([
+    {title: 'Resmind | Auth'},
+    {name: 'description', content: 'Log into your account'}
+])
+
+export default [
+    index("routes/home.tsx"),
+    route("/auth", 'routes/auth.tsx')
+] satisfies RouteConfig;
