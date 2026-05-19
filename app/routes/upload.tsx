@@ -1,14 +1,100 @@
 import { useState, type SubmitEvent } from 'react';
+import { useNavigate } from 'react-router';
 import { FileUploader } from '~/components/FileUploader';
 import { Navbar } from '~/components/Navbar';
+import { AIResponseFormat, prepareInstructions } from '~/constants';
+import { convertPdfToImage } from '~/lib/pdf2img';
+import { usePuterStore } from '~/lib/puter';
+import { generateUUID } from '~/lib/utils';
 
 const Upload = () => {
-    const [isProcessing, setisProcessing] = useState(false);
+    const { auth, isLoading, fs, ai, kv } = usePuterStore();
+    const navigate = useNavigate();
+
+    const [isProcessing, setIsProcessing] = useState(false);
     const [statusText, setStatusText] = useState('');
     const [file, setFile] = useState<File | null>(null);
 
     const handleFileSelect = (file: File | null) => {
         setFile(file);
+    };
+
+    const handleAnalyze = async ({
+        companyName,
+        jobTitle,
+        jobDescription,
+        file,
+    }: {
+        companyName: string;
+        jobTitle: string;
+        jobDescription: string;
+        file: File;
+    }) => {
+        setIsProcessing(true);
+        setStatusText('Uploading the file...');
+
+        const uploadedFile = await fs.upload([file]);
+        if (!uploadedFile) {
+            setStatusText('Error: Failed to upload the file.');
+            setIsProcessing(false);
+            return;
+        }
+
+        setStatusText('Converting to image...');
+        const imageFile = await convertPdfToImage(file);
+        if (!imageFile.file) {
+            setStatusText('Error: Failed to convert PDF to image.');
+            setIsProcessing(false);
+            return;
+        }
+
+        setStatusText('Uploading the image...');
+        const uploadedImage = await fs.upload([imageFile.file]);
+        if (!uploadedImage) {
+            setStatusText('Error: Failed to upload the image.');
+            setIsProcessing(false);
+            return;
+        }
+
+        setStatusText('Preparing data for analysis...');
+        const uuid = generateUUID();
+        const data = {
+            id: uuid,
+            resumePath: uploadedFile.path,
+            imagePath: uploadedImage.path,
+            companyName,
+            jobTitle,
+            jobDescription,
+            feedback: '',
+        };
+
+        await kv.set(`resume:${uuid}`, JSON.stringify(data));
+        setStatusText('Analyzing resume...');
+
+        const feedback = await ai.feedback(
+            uploadedFile.path,
+            prepareInstructions({
+                AIResponseFormat,
+                jobTitle,
+                jobDescription,
+            }),
+        );
+        if (!feedback) {
+            setStatusText('Error: Failed to analyze the resume.');
+            setIsProcessing(false);
+            return;
+        }
+
+        const feedbackText =
+            typeof feedback?.message.content === 'string'
+                ? feedback.message.content
+                : feedback?.message.content?.[0].text;
+
+        data.feedback = JSON.parse(feedbackText);
+        await kv.set(`resume:${uuid}`, JSON.stringify(data));
+        setStatusText('Analysis complete! Redirecting to results page...');
+
+        console.log({ data });
     };
 
     const handleSubmit = (e: SubmitEvent<HTMLFormElement>) => {
@@ -18,14 +104,16 @@ const Upload = () => {
         if (!form) return;
 
         const formData = new FormData(form);
-        const companyName = formData.get('company-name');
-        const jobTitle = formData.get('job-title');
-        const jobDescription = formData.get('job-description');
+        const companyName = formData.get('company-name') as string;
+        const jobTitle = formData.get('job-title') as string;
+        const jobDescription = formData.get('job-description') as string;
 
-        console.log({
-            companyName,
-            jobDescription,
-            jobTitle,
+        if (!file) return;
+
+        handleAnalyze({
+            companyName: companyName,
+            jobTitle: jobTitle,
+            jobDescription: jobDescription,
             file,
         });
     };
