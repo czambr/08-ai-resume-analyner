@@ -1,5 +1,7 @@
 import { useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router';
+import type { Route } from './+types/upload';
+
 import { FileUploader } from '~/components/FileUploader';
 import { Navbar } from '~/components/Navbar';
 import { AIResponseFormat, prepareInstructions } from '~/constants';
@@ -7,8 +9,15 @@ import { convertPdfToImage } from '~/lib/pdf2img';
 import { usePuterStore } from '~/lib/puter';
 import { generateUUID } from '~/lib/utils';
 
+export function meta({}: Route.MetaArgs) {
+    return [
+        { title: 'Resumind | Upload' },
+        { name: 'description', content: 'Upload your resume for smart feedback!' },
+    ];
+}
+
 const Upload = () => {
-    const { auth, isLoading, fs, ai, kv } = usePuterStore();
+    const { fs, ai, kv } = usePuterStore();
     const navigate = useNavigate();
 
     const [isProcessing, setIsProcessing] = useState(false);
@@ -94,7 +103,7 @@ const Upload = () => {
         await kv.set(`resume:${uuid}`, JSON.stringify(data));
         setStatusText('Analysis complete! Redirecting to results page...');
 
-        console.log({ data });
+        navigate(`/resume/${uuid}`);
     };
 
     const handleSubmit = (e: SubmitEvent<HTMLFormElement>) => {
